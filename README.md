@@ -54,14 +54,6 @@ web/                 the booking page, embedded into the binary
 - **The web page asks for the API key** and keeps it in that browser's `localStorage`, rather than baking the key into public HTML.
 - **Two stores behind one interface.** Postgres in production; an in-memory store with one mutex for tests and local runs. The same test suite runs against both.
 
-## Deploy (Render + Neon, both free)
-
-1. Create a Neon project and copy its connection string (`postgres://…?sslmode=require`).
-2. Push this repo to GitHub.
-3. On Render: **New → Blueprint**, pick the repo (uses `render.yaml`), and set `API_KEY` (a long random string) and `DATABASE_URL`.
-4. The tables are created on startup. Check `https://<app>.onrender.com/healthz`.
-
-The free Render instance sleeps after inactivity; the first request after that takes ~30–60 s. Bookings are safe because they live in Neon.
 
 ## Quick curl
 
