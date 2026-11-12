@@ -1,0 +1,14 @@
+# Render Blueprint: New > Blueprint > pick this repo.
+# Set API_KEY and DATABASE_URL (from Neon) in the dashboard when prompted.
+services:
+  - type: web
+    name: clinic-booking
+    runtime: docker
+    plan: free
+    region: frankfurt # same region as the Neon database
+    healthCheckPath: /healthz
+    envVars:
+      - key: API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false

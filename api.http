@@ -1,0 +1,184 @@
+### Manual tests for every level.
+### Start the server first with API_KEY=dev-key and PORT=8090 (dev-key is a local-only placeholder, not the real key).
+@base = http://localhost:8090
+@key = dev-key
+
+### ---------- LEVEL 1 ----------
+
+### 1.1 Reset: 3 future slots + 1 past slot. Expect 200.
+POST {{base}}/reset
+X-API-Key: {{key}}
+Content-Type: application/json
+
+{
+  "slots": [
+    {"id": "s2", "provider": "Dr Bello", "start": "2027-01-10T10:00:00Z", "end": "2027-01-10T10:30:00Z"},
+    {"id": "s1", "provider": "Dr Ade",   "start": "2027-01-10T09:00:00Z", "end": "2027-01-10T09:30:00Z"},
+    {"id": "s3", "provider": "Dr Ade",   "start": "2027-01-11T09:00:00Z", "end": "2027-01-11T09:30:00Z"},
+    {"id": "old", "provider": "Dr Ade",  "start": "2025-01-01T09:00:00Z", "end": "2025-01-01T09:30:00Z"}
+  ]
+}
+
+### 1.2 List slots. Expect earliest first: old, s1, s2, s3, all available=true.
+GET {{base}}/slots
+X-API-Key: {{key}}
+
+### 1.3 Filter by provider (exact match). Expect only Dr Ade's 3 slots.
+GET {{base}}/slots?provider=Dr%20Ade
+X-API-Key: {{key}}
+
+### 1.4 Book s1. Expect 201, status "confirmed". Saves the id for later requests.
+POST {{base}}/bookings
+X-API-Key: {{key}}
+Content-Type: application/json
+
+{"slot_id": "s1", "name": "Ada Obi", "email": "ada@example.com"}
+
+> {% client.global.set("bookingId", response.body.id); %}
+
+### 1.5 Look up that booking. Expect 200 and the same id.
+GET {{base}}/bookings/{{bookingId}}
+X-API-Key: {{key}}
+
+### 1.6 Look up a booking that doesn't exist. Expect 404.
+GET {{base}}/bookings/does-not-exist
+X-API-Key: {{key}}
+
+### ---------- LEVEL 2 ----------
+
+### 2.1 No API key. Expect 401.
+GET {{base}}/slots
+
+### 2.2 Wrong API key. Expect 401.
+GET {{base}}/slots
+X-API-Key: wrong
+
+### 2.3 Missing name. Expect 400.
+POST {{base}}/bookings
+X-API-Key: {{key}}
+Content-Type: application/json
+
+{"slot_id": "s2", "email": "a@example.com"}
+
+### 2.4 Invalid email. Expect 400.
+POST {{base}}/bookings
+X-API-Key: {{key}}
+Content-Type: application/json
+
+{"slot_id": "s2", "name": "A", "email": "not-an-email"}
+
+### 2.5 Slot doesn't exist. Expect 404.
+POST {{base}}/bookings
+X-API-Key: {{key}}
+Content-Type: application/json
+
+{"slot_id": "nope", "name": "A", "email": "a@example.com"}
+
+### 2.6 Slot already started. Expect 400.
+POST {{base}}/bookings
+X-API-Key: {{key}}
+Content-Type: application/json
+
+{"slot_id": "old", "name": "A", "email": "a@example.com"}
+
+### 2.7 Spaces + capitals. Expect 201 with name "Bo Lee" and email "bo@example.com".
+POST {{base}}/bookings
+X-API-Key: {{key}}
+Content-Type: application/json
+
+{"slot_id": "s2", "name": "   Bo Lee  ", "email": "  BO@Example.COM "}
+
+### ---------- LEVEL 3 ----------
+
+### 3.1 Book s1 again (already booked in 1.4). Expect 409.
+POST {{base}}/bookings
+X-API-Key: {{key}}
+Content-Type: application/json
+
+{"slot_id": "s1", "name": "Someone Else", "email": "else@example.com"}
+
+### 3.2 Cancel the booking from 1.4. Expect 200, status "cancelled".
+DELETE {{base}}/bookings/{{bookingId}}
+X-API-Key: {{key}}
+
+### 3.3 Cancel it again. Expect 409.
+DELETE {{base}}/bookings/{{bookingId}}
+X-API-Key: {{key}}
+
+### 3.4 s1 is free again. Expect 201.
+POST {{base}}/bookings
+X-API-Key: {{key}}
+Content-Type: application/json
+
+{"slot_id": "s1", "name": "Someone Else", "email": "else@example.com"}
+
+### (Simultaneous requests are hard to fire by hand: `go test ./...` sends 50 at once.)
+
+### ---------- LEVEL 4 ----------
+
+### 4.1 Book s3 with an Idempotency-Key. Expect 201.
+POST {{base}}/bookings
+X-API-Key: {{key}}
+Idempotency-Key: retry-demo-1
+Content-Type: application/json
+
+{"slot_id": "s3", "name": "Cy", "email": "cy@example.com"}
+
+### 4.2 Same key, same body (a retry). Expect 201 with the SAME id, header Idempotent-Replayed: true.
+POST {{base}}/bookings
+X-API-Key: {{key}}
+Idempotency-Key: retry-demo-1
+Content-Type: application/json
+
+{"slot_id": "s3", "name": "Cy", "email": "cy@example.com"}
+
+### 4.3 Same key, different body. Expect 422.
+POST {{base}}/bookings
+X-API-Key: {{key}}
+Idempotency-Key: retry-demo-1
+Content-Type: application/json
+
+{"slot_id": "s2", "name": "Cy", "email": "cy@example.com"}
+
+### 4.4 Ada's bookings (email match ignores case). Expect 1 booking (the cancelled one) and next_cursor: null.
+GET {{base}}/bookings?email=ADA@example.com
+X-API-Key: {{key}}
+
+### 4.5 Bad limit. Expect 400 (try 0, 51, abc too).
+GET {{base}}/bookings?email=ada@example.com&limit=51
+X-API-Key: {{key}}
+
+### 4.6 Give Ada a second booking, then page through with limit=1.
+POST {{base}}/bookings
+X-API-Key: {{key}}
+Content-Type: application/json
+
+{"slot_id": "s1", "name": "Ada Obi", "email": "ada@example.com"}
+
+### 4.7 Page 1 of Ada's bookings (limit 1). Expect next_cursor to be a string.
+GET {{base}}/bookings?email=ada@example.com&limit=1
+X-API-Key: {{key}}
+
+> {% client.global.set("cursor", response.body.next_cursor); %}
+
+### 4.8 Page 2. Expect the second booking and next_cursor: null.
+GET {{base}}/bookings?email=ada@example.com&limit=1&cursor={{cursor}}
+X-API-Key: {{key}}
+
+### ---------- LEVEL 5 ----------
+### Send this 6 times quickly. Attempts 1-5: 404 (slot doesn't exist, but they still count).
+### Attempt 6: 429 with a Retry-After header. Then try 5.2 (different email): not blocked.
+
+### 5.1 Spam attempt
+POST {{base}}/bookings
+X-API-Key: {{key}}
+Content-Type: application/json
+
+{"slot_id": "nope", "name": "Spam", "email": "spam@example.com"}
+
+### 5.2 Different email. Expect NOT 429.
+POST {{base}}/bookings
+X-API-Key: {{key}}
+Content-Type: application/json
+
+{"slot_id": "nope", "name": "Fine", "email": "fine@example.com"}
